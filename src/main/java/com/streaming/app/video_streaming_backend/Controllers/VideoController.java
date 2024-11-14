@@ -152,6 +152,7 @@ public class VideoController {
 
     // master .m2u8 file
 
+    @CrossOrigin(origins = "http://localhost:63342")
     @GetMapping("/{videoId}/master.m3u8")
     public ResponseEntity<Resource> serveMasterFile(@PathVariable String videoId){
         Path path = Paths.get("videos_hls", videoId, "master.m3u8");
@@ -164,31 +165,48 @@ public class VideoController {
 
         return ResponseEntity.status(HttpStatus.OK)
                 .header(HttpHeaders.CONTENT_TYPE, "application/vnd.apple.mpegurl")
+                .header(HttpHeaders.CACHE_CONTROL, "no-cache, must-revalidate")
                 .body(resource);
     }
 
     // serve the segments...
-    @GetMapping("/{videoId}/{segment}.ts")
+    @GetMapping("/{videoId}/{resolution}/{segment}.ts")
+    @CrossOrigin(origins = "http://localhost:63342")
     public ResponseEntity<Resource> serveSegments(
             @PathVariable String videoId,
+            @PathVariable String resolution,
             @PathVariable String segment
     ) {
-
         // create path for segment
-        Path path = Paths.get("videos_hls", videoId, segment + ".ts");
+        Path segmentPath = Paths.get("videos_hls", videoId, resolution, segment + ".ts");
+        if (!Files.exists(segmentPath)) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+
+        Resource resource = new FileSystemResource(segmentPath);
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .header(HttpHeaders.CONTENT_TYPE, "video/mp2t")
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=30")
+                .body(resource);
+    }
+
+    @CrossOrigin(origins = "http://localhost:63342")
+    @GetMapping("/{videoId}/{resolution}/playlist.m3u8")
+    public ResponseEntity<Resource> servePlaylistFile(
+            @PathVariable String videoId,
+            @PathVariable String resolution) {
+        Path path = Paths.get("videos_hls", videoId, resolution, "playlist.m3u8");
+
         if (!Files.exists(path)) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
 
         Resource resource = new FileSystemResource(path);
 
-        return ResponseEntity
-                .ok()
-                .header(
-                        HttpHeaders.CONTENT_TYPE, "video/mp2t"
-                )
+        return ResponseEntity.status(HttpStatus.OK)
+                .header(HttpHeaders.CONTENT_TYPE, "application/vnd.apple.mpegurl")
                 .body(resource);
-
     }
 
 }

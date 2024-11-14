@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -70,7 +71,9 @@ public class VideoServiceImpl implements VideoService {
             // process video.
             processVideo(video.getVideoId());
 
-            // metadata save to the db.
+            // delete the original video.
+            Files.deleteIfExists(videoPath);
+
             return video;
         } catch (Exception e) {
             e.printStackTrace();
@@ -124,18 +127,51 @@ public class VideoServiceImpl implements VideoService {
             Path outputPath = Paths.get(HSL_DIR, videoId);
             Files.createDirectories(outputPath);
 
-            String ffmpegCmd = String.format(
-                    "ffmpeg -i \"%s\" -c:v libx264 -c:a aac -strict -2 -f hls -hls_time 10 -hls_list_size 0 -hls_segment_filename \"%s/segment_%%3d.ts\"  \"%s/master.m3u8\" ",
-                    videoPath, outputPath, outputPath
-            );
-            System.out.println(ffmpegCmd);
+            String[] renditions = {
+                    "1920x1080 5000k",  // Full HD (1080p) - Highest quality
+                    "1280x720 3000k",   // High quality (720p)
+                    "854x480 1500k",    // Medium quality (480p)
+                    "640x360 800k",     // Low quality (360p)
+                    "426x240 400k"      // Very low quality (240p)
+            };
 
-            ProcessBuilder processBuilder = new ProcessBuilder("/bin/bash", "-c", ffmpegCmd);
-            processBuilder.inheritIO();
-            Process process = processBuilder.start();
-            int exit = process.waitFor();
-            if (exit != 0) {
-                throw new RuntimeException("video processing failed!!");
+            for(String rendition: renditions){
+                String[] parts = rendition.split(" ");
+                String resolution = parts[0];
+                String bitrate = parts[1];
+
+                String renditionOutputPath = String.format("%s/%s_%sp", outputPath, videoId, resolution);
+                Files.createDirectories(Paths.get(renditionOutputPath));
+
+                String ffmpegCmd = String.format(
+                        "ffmpeg -i \"%s\" -c:v libx264 -c:a aac -b:v %s -vf scale=%s -strict -2 -f hls -hls_time 10 -hls_list_size 0 " +
+                                "-hls_segment_filename \"%s/segment_%%3d.ts\" \"%s/playlist.m3u8\"",
+                        videoPath, bitrate, resolution, renditionOutputPath, renditionOutputPath
+                );
+
+                System.out.println(ffmpegCmd);
+
+
+                ProcessBuilder processBuilder = new ProcessBuilder("/bin/bash", "-c", ffmpegCmd);
+                processBuilder.inheritIO();
+                Process process = processBuilder.start();
+                int exit = process.waitFor();
+                if (exit != 0) {
+                    throw new RuntimeException("video processing failed!!");
+                }
+            }
+
+            Path masterPlaylistPath = Paths.get(outputPath.toString(), "master.m3u8");
+            try (BufferedWriter writer = Files.newBufferedWriter(masterPlaylistPath)) {
+                writer.write("#EXTM3U\n");
+
+                for (String rendition : renditions) {
+                    String[] parts = rendition.split(" ");
+                    String resolution = parts[0];
+                    String bitrate = parts[1].replace("k", "000"); // Convert to bps for EXT-X-STREAM-INF
+                    writer.write(String.format("#EXT-X-STREAM-INF:BANDWIDTH=%s,RESOLUTION=%s\n", bitrate, resolution));
+                    writer.write(String.format("%s_%sp/playlist.m3u8\n", videoId, resolution));
+                }
             }
 
             return videoId;
