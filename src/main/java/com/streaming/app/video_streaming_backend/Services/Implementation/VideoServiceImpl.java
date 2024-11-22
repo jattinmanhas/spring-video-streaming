@@ -9,6 +9,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -21,13 +26,19 @@ import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.List;
 
+import static com.streaming.app.video_streaming_backend.config.AwsConstants.AWSBUCKETNAME;
+
 @Service
 public class VideoServiceImpl implements VideoService {
     @Autowired
     private VideoRepository videoRepository;
 
-    @Value("${files.video}")
-    String DIRECTORY;
+    @Autowired
+    private S3Client s3Client;
+
+    private String bucketName = AWSBUCKETNAME;
+
+    String DIRECTORY = "videos";
 
     String HSL_DIR = "videos_hls";
 
@@ -101,6 +112,39 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
+    public Video saveVideoToAws(Video video, MultipartFile file){
+        String fileName = file.getOriginalFilename();
+        String cleanFileName = StringUtils.cleanPath(fileName);
+        String s3Key = "original_videos/" + video.getVideoId() +  cleanFileName;
+
+        try{
+            s3Client.putObject(PutObjectRequest.builder()
+                            .bucket(bucketName)
+                            .key(s3Key)
+                            .contentType(file.getContentType())
+                            .acl(ObjectCannedACL.PRIVATE)
+                            .build(),
+                    RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
+
+            video.setContentType(file.getContentType());
+            video.setFilePath(s3Key);
+            videoRepository.save(video);
+
+            return video;
+        }catch (Exception e){
+            e.printStackTrace();
+
+            // Cleanup: Delete the video file from S3 if something goes wrong
+            s3Client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(s3Key)
+                    .build());
+
+            throw new RuntimeException("Video processing failed and files were cleaned up.", e);
+        }
+    }
+
+    @Override
     public Video getById(String videoId) {
         Video video = videoRepository.findById(videoId).orElseThrow(() -> new RuntimeException("Video not Found"));
         return video;
@@ -143,9 +187,15 @@ public class VideoServiceImpl implements VideoService {
                 String renditionOutputPath = String.format("%s/%s_%sp", outputPath, videoId, resolution);
                 Files.createDirectories(Paths.get(renditionOutputPath));
 
+//                String ffmpegCmd = String.format(
+//                        "ffmpeg -i \"%s\" -c:v libx264 -c:a aac -b:v %s -vf scale=%s -strict -2 -f hls -hls_time 3 -hls_list_size 0 " +
+//                                "-hls_segment_filename \"%s/segment_%%3d.ts\" \"%s/playlist.m3u8\"",
+//                        videoPath, bitrate, resolution, renditionOutputPath, renditionOutputPath
+//                );
+
                 String ffmpegCmd = String.format(
-                        "ffmpeg -i \"%s\" -c:v libx264 -c:a aac -b:v %s -vf scale=%s -strict -2 -f hls -hls_time 10 -hls_list_size 0 " +
-                                "-hls_segment_filename \"%s/segment_%%3d.ts\" \"%s/playlist.m3u8\"",
+                        "ffmpeg -i \"%s\" -c:v libx264 -c:a aac -b:v %s -vf scale=%s -sc_threshold 0 -g 72 -keyint_min 72 -strict -2 -f hls -hls_time 3 -hls_flags split_by_time -hls_list_size 0 " +
+                                "-hls_segment_filename \"%s/segment_%%03d.ts\" \"%s/playlist.m3u8\"",
                         videoPath, bitrate, resolution, renditionOutputPath, renditionOutputPath
                 );
 

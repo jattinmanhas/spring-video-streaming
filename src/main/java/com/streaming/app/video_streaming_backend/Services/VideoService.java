@@ -18,4 +18,6 @@ public interface VideoService {
 
     // video_processing
     String processVideo(String videoId);
+
+    public Video saveVideoToAws(Video video, MultipartFile file);
 }
