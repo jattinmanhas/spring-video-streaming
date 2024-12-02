@@ -13,7 +13,7 @@ class VideoStreamingBackendApplicationTests {
 
 	@Test
 	void contextLoads() {
-		videoService.processVideo("30449b7b-af6b-48d3-9bbc-8d6c36a3131c");
+
 	}
 
 }

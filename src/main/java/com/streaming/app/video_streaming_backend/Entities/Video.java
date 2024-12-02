@@ -3,7 +3,6 @@ package com.streaming.app.video_streaming_backend.Entities;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.*;
 
 @Entity
 @Table(name = "videos")
@@ -13,18 +12,18 @@ public class Video {
     private String title;
     private String description;
     private String contentType;
-    private String filePath;
+    private String duration;
 
     public Video(){
 
     }
 
-    public Video(String filePath, String contentType, String description, String title, String videoId) {
-        this.filePath = filePath;
-        this.contentType = contentType;
-        this.description = description;
-        this.title = title;
+    public Video(String videoId, String title, String description, String contentType, String duration) {
         this.videoId = videoId;
+        this.title = title;
+        this.description = description;
+        this.contentType = contentType;
+        this.duration = duration;
     }
 
     public String getVideoId() {
@@ -59,13 +58,15 @@ public class Video {
         this.contentType = contentType;
     }
 
-    public String getFilePath() {
-        return filePath;
+
+    public String getDuration() {
+        return duration;
     }
 
-    public void setFilePath(String filePath) {
-        this.filePath = filePath;
+    public void setDuration(String duration) {
+        this.duration = duration;
     }
+
 
     @Override
     public String toString() {
@@ -74,7 +75,7 @@ public class Video {
                 ", title='" + title + '\'' +
                 ", description='" + description + '\'' +
                 ", contentType='" + contentType + '\'' +
-                ", filePath='" + filePath + '\'' +
+                ", duration=" + duration +
                 '}';
     }
 }

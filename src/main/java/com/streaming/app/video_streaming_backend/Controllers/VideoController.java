@@ -34,12 +34,26 @@ public class VideoController {
         this.videoService = videoService;
     }
 
+    @GetMapping("adminOnly")
+    public ResponseEntity<String> adminOnlyRoute(@RequestHeader("X-Roles") String roles) {
+        System.out.println(roles);
+        if (!roles.contains("ROLE_ADMIN")) {
+            return ResponseEntity.status(403).body("Access Denied: Admin role required.");
+        }
+        return ResponseEntity.ok("Access granted to admin route.");
+    }
+
     @PostMapping("createVideo")
     public ResponseEntity<?> createVideo(
             @RequestParam("file")MultipartFile file,
             @RequestParam("title") String title,
-            @RequestParam("description") String description
+            @RequestParam("description") String description,
+            @RequestHeader("X-Roles") String roles
             ){
+
+        if (!roles.contains("ROLE_ADMIN")) {
+            return ResponseEntity.status(403).body("Access Denied: Admin role required.");
+        }
 
         Video video = new Video();
         video.setTitle(title);
@@ -80,7 +94,7 @@ public class VideoController {
         }
     }
 
-    @GetMapping("/stream/{videoId}")
+   /* @GetMapping("/stream/{videoId}")
     public ResponseEntity<Resource> streamVideo(
             @PathVariable String videoId
     ){
@@ -99,14 +113,9 @@ public class VideoController {
                 .contentType(MediaType.parseMediaType(contentType))
                 .body(resource);
     }
-
-    @GetMapping("allVideos")
-    public List<Video> getAllVideos(){
-        return videoService.getAllVideos();
-    }
-
+*/
     // stream video in chunks...
-    @GetMapping("/stream/range/{videoId}")
+   /* @GetMapping("/stream/range/{videoId}")
     public ResponseEntity<Resource> streamVideoRange(
             @PathVariable String videoId,
             @RequestHeader(value = "Range", required = false) String range
@@ -169,7 +178,7 @@ public class VideoController {
         }catch(IOException e){
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-    }
+    }*/
 
     // serve hls playlist
 

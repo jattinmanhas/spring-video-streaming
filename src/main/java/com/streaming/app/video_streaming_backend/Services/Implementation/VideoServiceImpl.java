@@ -1,11 +1,13 @@
 package com.streaming.app.video_streaming_backend.Services.Implementation;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.streaming.app.video_streaming_backend.Entities.Video;
-import com.streaming.app.video_streaming_backend.Repositories.VideoRepository;
 import com.streaming.app.video_streaming_backend.Services.VideoService;
+import com.streaming.app.video_streaming_backend.config.AwsConstants;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -15,14 +17,12 @@ import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -30,8 +30,11 @@ import static com.streaming.app.video_streaming_backend.config.AwsConstants.AWSB
 
 @Service
 public class VideoServiceImpl implements VideoService {
+
     @Autowired
-    private VideoRepository videoRepository;
+    private final KafkaTemplate<String, String> kafkaTemplate;
+
+    private final ObjectMapper objectMapper;
 
     @Autowired
     private S3Client s3Client;
@@ -41,6 +44,11 @@ public class VideoServiceImpl implements VideoService {
     String DIRECTORY = "videos";
 
     String HSL_DIR = "videos_hls";
+
+    public VideoServiceImpl(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
+        this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
+    }
 
     @PostConstruct
     public void init(){
@@ -76,14 +84,20 @@ public class VideoServiceImpl implements VideoService {
 
             // video metadata
             video.setContentType(file.getContentType());
-            video.setFilePath(videoPath.toString());
-            videoRepository.save(video);
+
+            String videoDuration = getVideoDuration(videoPath);
+            video.setDuration(videoDuration);
+
+//            videoRepository.save(video);
 
             // process video.
-            processVideo(video.getVideoId());
+            processVideo(video, videoPath);
 
             // delete the original video.
             Files.deleteIfExists(videoPath);
+
+            // send video metadata to the kafka...
+            updateVideoMetadata(video);
 
             return video;
         } catch (Exception e) {
@@ -111,6 +125,16 @@ public class VideoServiceImpl implements VideoService {
         }
     }
 
+    private void updateVideoMetadata(Video video) {
+        try{
+            String videoJson = objectMapper.writeValueAsString(video);
+            kafkaTemplate.send(AwsConstants.KAFKATOPIC, videoJson);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println("Topic Published" + video);
+    }
+
     @Override
     public Video saveVideoToAws(Video video, MultipartFile file){
         String fileName = file.getOriginalFilename();
@@ -127,8 +151,7 @@ public class VideoServiceImpl implements VideoService {
                     RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
 
             video.setContentType(file.getContentType());
-            video.setFilePath(s3Key);
-            videoRepository.save(video);
+
 
             return video;
         }catch (Exception e){
@@ -144,31 +167,73 @@ public class VideoServiceImpl implements VideoService {
         }
     }
 
-    @Override
-    public Video getById(String videoId) {
-        Video video = videoRepository.findById(videoId).orElseThrow(() -> new RuntimeException("Video not Found"));
-        return video;
+    public static String getVideoDuration(Path videoPath) {
+
+        try {
+            // Construct the ffprobe command
+            List<String> command = new ArrayList<>();
+            command.add("ffprobe");
+            command.add("-v");
+            command.add("error");
+            command.add("-show_entries");
+            command.add("format=duration");
+            command.add("-of");
+            command.add("default=noprint_wrappers=1:nokey=1");
+            command.add(videoPath.toString()); // Convert Path to String
+
+            // Execute the command
+            Process process = new ProcessBuilder(command).start();
+
+            // Read the output
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            StringBuilder output = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+
+            // Wait for the process to finish
+            process.waitFor();
+
+            // Parse the duration (can be in seconds.milliseconds or HH:MM:SS.ms format)
+            String durationString = output.toString().trim();
+
+            if (durationString.contains(":")) {  // Handle HH:MM:SS.ms format
+                return durationString; // Return directly if already in desired format
+            } else { // Handle seconds.milliseconds format, convert to HH:MM:SS.ms
+
+                try {
+                    double seconds = Double.parseDouble(durationString);
+                    return formatSeconds(seconds);
+
+                } catch (NumberFormatException e) {
+                    System.err.println("Error parsing duration: " + e.getMessage());
+                    return null;
+                }
+            }
+
+
+
+
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error executing ffprobe: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String formatSeconds(double seconds) {
+        int hours = (int) (seconds / 3600);
+        int minutes = (int) ((seconds % 3600) / 60);
+        int secs = (int) (seconds % 60);
+        double milliseconds = (seconds - (int)seconds) * 1000;  // Get fractional part for milliseconds
+
+        return String.format("%02d:%02d:%02d.%03d", hours, minutes, secs, (int)milliseconds);
     }
 
     @Override
-    public Video getByTitle(String title) {
-        return null;
-    }
-
-    @Override
-    public List<Video> getAllVideos() {
-        return videoRepository.findAll();
-    }
-
-    @Override
-    public String processVideo(String videoId) {
-        Video video = this.getById(videoId);
-        String filePath = video.getFilePath();
-        // path where to store data...
-        Path videoPath = Paths.get(filePath);
-
+    public String processVideo(Video video, Path videoPath) {
         try{
-            Path outputPath = Paths.get(HSL_DIR, videoId);
+            Path outputPath = Paths.get(HSL_DIR, video.getVideoId());
             Files.createDirectories(outputPath);
 
             String[] renditions = {
@@ -184,7 +249,7 @@ public class VideoServiceImpl implements VideoService {
                 String resolution = parts[0];
                 String bitrate = parts[1];
 
-                String renditionOutputPath = String.format("%s/%s_%sp", outputPath, videoId, resolution);
+                String renditionOutputPath = String.format("%s/%s_%sp", outputPath, video.getVideoId(), resolution);
                 Files.createDirectories(Paths.get(renditionOutputPath));
 
 //                String ffmpegCmd = String.format(
@@ -220,11 +285,11 @@ public class VideoServiceImpl implements VideoService {
                     String resolution = parts[0];
                     String bitrate = parts[1].replace("k", "000"); // Convert to bps for EXT-X-STREAM-INF
                     writer.write(String.format("#EXT-X-STREAM-INF:BANDWIDTH=%s,RESOLUTION=%s\n", bitrate, resolution));
-                    writer.write(String.format("%s_%sp/playlist.m3u8\n", videoId, resolution));
+                    writer.write(String.format("%s_%sp/playlist.m3u8\n", video.getVideoId(), resolution));
                 }
             }
 
-            return videoId;
+            return video.getVideoId();
 
         }catch(IOException ex){
             throw new RuntimeException("Video Processing Failed..");
