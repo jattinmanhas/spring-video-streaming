@@ -2,12 +2,18 @@ package com.streaming.app.video_streaming_backend.Services.Implementation;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.streaming.app.video_streaming_backend.DTO.VideoDTO;
 import com.streaming.app.video_streaming_backend.Entities.Video;
+import com.streaming.app.video_streaming_backend.Mapper.VideoMapper;
+import com.streaming.app.video_streaming_backend.Payload.PropertiesVariables;
+import com.streaming.app.video_streaming_backend.Repository.VideoStreamingRepository;
 import com.streaming.app.video_streaming_backend.Services.VideoService;
 import com.streaming.app.video_streaming_backend.config.AwsConstants;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,31 +36,26 @@ import static com.streaming.app.video_streaming_backend.config.AwsConstants.AWSB
 
 @Service
 public class VideoServiceImpl implements VideoService {
+    private final KafkaTemplate<String, VideoDTO> kafkaTemplate;
+    private final PropertiesVariables propertiesVariables;
+    private final VideoMapper videoMapper;
+    private final VideoStreamingRepository repository;
 
-    @Autowired
-    private final KafkaTemplate<String, String> kafkaTemplate;
+//    @Autowired
+//    private S3Client s3Client;
 
-    private final ObjectMapper objectMapper;
-
-    @Autowired
-    private S3Client s3Client;
-
-    private String bucketName = AWSBUCKETNAME;
-
-    String DIRECTORY = "videos";
-
-    String HSL_DIR = "videos_hls";
-
-    public VideoServiceImpl(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
+    public VideoServiceImpl(KafkaTemplate<String, VideoDTO> kafkaTemplate, PropertiesVariables propertiesVariables, VideoMapper videoMapper, VideoStreamingRepository repository) {
         this.kafkaTemplate = kafkaTemplate;
-        this.objectMapper = objectMapper;
+        this.propertiesVariables = propertiesVariables;
+        this.videoMapper = videoMapper;
+        this.repository = repository;
     }
 
     @PostConstruct
     public void init(){
-        File file = new File(DIRECTORY);
+        File file = new File(propertiesVariables.getVideoPath());
         try {
-            Files.createDirectories(Paths.get(HSL_DIR));
+            Files.createDirectories(Paths.get(propertiesVariables.getVideoHsl()));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -70,26 +71,42 @@ public class VideoServiceImpl implements VideoService {
     @Override
     public Video saveVideo(Video video, MultipartFile file) {
         String filename = file.getOriginalFilename(); // gets original filename
+        assert filename != null;
         String cleanFileName = StringUtils.cleanPath(filename);
-        String cleanDirPath = StringUtils.cleanPath(DIRECTORY);
+        String cleanDirPath = StringUtils.cleanPath(propertiesVariables.getVideoPath());
         Path videoPath = Paths.get(cleanDirPath, cleanFileName);
-        Path hlsDirPath = Paths.get(HSL_DIR, video.getVideoId());
+        // Path hlsDirPath = Paths.get(propertiesVariables.getVideoHsl(), video.getVideoId());
 
         try{
             String contentType = file.getContentType();
-            InputStream inputStream = file.getInputStream();
+             InputStream inputStream = file.getInputStream();
 
             // copy file to  folder
-            Files.copy(inputStream, videoPath, StandardCopyOption.REPLACE_EXISTING);
+             Files.copy(inputStream, videoPath, StandardCopyOption.REPLACE_EXISTING);
 
             // video metadata
-            video.setContentType(file.getContentType());
+            video.setContentType(contentType);
 
-            String videoDuration = getVideoDuration(videoPath);
-            video.setDuration(videoDuration);
+//            String videoDuration = getVideoDuration(videoPath);
+            video.setDuration("00:00");
+            video.setStatus("PROCESSING");
 
-//            videoRepository.save(video);
+            VideoDTO videoDTO = videoMapper.mapVideoToVideoDTO(video, videoPath, null);
+            sendVideoDTO(videoDTO);
 
+            repository.save(video);
+
+            return video;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Video processing failed and files were cleaned up.", e);
+        }
+    }
+
+    /*@Async
+    public void processVideoAsync(Video video, Path videoPath, Path hlsDirPath){
+        try{
             // process video.
             processVideo(video, videoPath);
 
@@ -98,8 +115,6 @@ public class VideoServiceImpl implements VideoService {
 
             // send video metadata to the kafka...
             updateVideoMetadata(video);
-
-            return video;
         } catch (Exception e) {
             e.printStackTrace();
 
@@ -121,23 +136,15 @@ public class VideoServiceImpl implements VideoService {
             }catch (IOException ioException){
                 System.err.println("Failed to delete original video file: " + ioException.getMessage());
             }
-            throw new RuntimeException("Video processing failed and files were cleaned up.", e);
         }
+    }*/
+
+    public void sendVideoDTO(VideoDTO videoDTO) {
+        kafkaTemplate.send(AwsConstants.KAFKATOPIC, videoDTO);
+        System.out.println("Published UserDTO: " + videoDTO);
     }
 
-    private void updateVideoMetadata(Video video) {
-        try{
-            String videoJson = objectMapper.writeValueAsString(video);
-            kafkaTemplate.send(AwsConstants.KAFKATOPIC, videoJson);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println("Topic Published" + video);
-    }
-
-    @Override
-    public Video saveVideoToAws(Video video, MultipartFile file){
-        String fileName = file.getOriginalFilename();
+        /*String fileName = file.getOriginalFilename();
         String cleanFileName = StringUtils.cleanPath(fileName);
         String s3Key = "original_videos/" + video.getVideoId() +  cleanFileName;
 
@@ -152,7 +159,6 @@ public class VideoServiceImpl implements VideoService {
 
             video.setContentType(file.getContentType());
 
-
             return video;
         }catch (Exception e){
             e.printStackTrace();
@@ -164,8 +170,7 @@ public class VideoServiceImpl implements VideoService {
                     .build());
 
             throw new RuntimeException("Video processing failed and files were cleaned up.", e);
-        }
-    }
+        }*/
 
     public static String getVideoDuration(Path videoPath) {
 
@@ -230,7 +235,7 @@ public class VideoServiceImpl implements VideoService {
         return String.format("%02d:%02d:%02d.%03d", hours, minutes, secs, (int)milliseconds);
     }
 
-    @Override
+    /*@Override
     public String processVideo(Video video, Path videoPath) {
         try{
             Path outputPath = Paths.get(HSL_DIR, video.getVideoId());
@@ -296,5 +301,5 @@ public class VideoServiceImpl implements VideoService {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-    }
+    }*/
 }

@@ -15,14 +15,14 @@ public class RouteValidator {
             "/actuator/health",
             "/authentication/api/auth/register",
             "/authentication/api/auth/authenticate",
-            "streaming/api/video/e5bc992a-bc9d-40fe-82e5-8ba03a2e5161/master.m3u8",
-            "streaming/api/video/e5bc992a-bc9d-40fe-82e5-8ba03a2e5161/e5bc992a-bc9d-40fe-82e5-8ba03a2e5161_1920x1080p/playlist.m3u8"
+            "streaming/api/video/f2a316b8-b328-4fee-9804-accb8c76cafe/master.m3u8",
+            "streaming/api/video/f2a316b8-b328-4fee-9804-accb8c76cafe/f2a316b8-b328-4fee-9804-accb8c76cafe/playlist.m3u8"
     );
 
     public static final List<Pattern> dynamicPatterns = List.of(
-            Pattern.compile("/streaming/api/video/[a-f0-9\\-]+/master\\.m3u8"),
-            Pattern.compile("/streaming/api/video/[a-f0-9\\-]+/[a-f0-9\\-]+_[0-9]+x[0-9]+p/playlist\\.m3u8"),
-            Pattern.compile("/streaming/api/video/[a-f0-9\\-]+/[a-f0-9\\-]+_[0-9]+x[0-9]+p/segment_[0-9]+\\.ts")
+            Pattern.compile("/processing/api/video/[a-f0-9\\-]+/master\\.m3u8"),
+            Pattern.compile("/processing/api/video/[a-f0-9\\-]+/[a-f0-9\\-]+_[0-9]+x[0-9]+p/playlist\\.m3u8"),
+            Pattern.compile("/processing/api/video/[a-f0-9\\-]+/[a-f0-9\\-]+_[0-9]+x[0-9]+p/segment_[0-9]+\\.ts")
     );
 
     public Predicate<ServerHttpRequest> isSecured = request -> {

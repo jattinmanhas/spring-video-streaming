@@ -1,5 +1,6 @@
 package com.streaming.app.video_streaming_backend.config;
 
+import com.streaming.app.video_streaming_backend.DTO.VideoDTO;
 import com.streaming.app.video_streaming_backend.Entities.Video;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -20,16 +21,16 @@ import java.util.Map;
 @EnableKafka
 public class KafkaConfig {
     @Bean
-    public ProducerFactory<String, String> producerFactory(){
+    public ProducerFactory<String, VideoDTO> producerFactory(){
         Map<String, Object> configProps = new HashMap<>();
         configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, AwsConstants.BOOTSTRAP_SERVERS);
         configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+        configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
         return new DefaultKafkaProducerFactory<>(configProps);
     }
 
     @Bean
-    public KafkaTemplate<String, String> videoMetadataKafkaTemplate(){
+    public KafkaTemplate<String, VideoDTO> videoMetadataKafkaTemplate(){
         return new KafkaTemplate<>(producerFactory());
     }
 }

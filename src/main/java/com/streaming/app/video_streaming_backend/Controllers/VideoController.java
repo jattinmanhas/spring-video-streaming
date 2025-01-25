@@ -71,7 +71,7 @@ public class VideoController {
         }
     }
 
-    @PostMapping("createVideo/aws")
+   /* @PostMapping("createVideo/aws")
     public ResponseEntity<?> createVideoToAws(
             @RequestParam("file")MultipartFile file,
             @RequestParam("title") String title,
@@ -92,7 +92,7 @@ public class VideoController {
                     new CustomMessage("Video not Uploaded", HttpStatus.INTERNAL_SERVER_ERROR, true)
             );
         }
-    }
+    }*/
 
    /* @GetMapping("/stream/{videoId}")
     public ResponseEntity<Resource> streamVideo(

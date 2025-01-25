@@ -36,3 +36,4 @@ application.yml
 videos_hsl/
 
 src/main/java/com/streaming/app/video_streaming_backend/config/AwsConstants.java
+**/AwsConstants

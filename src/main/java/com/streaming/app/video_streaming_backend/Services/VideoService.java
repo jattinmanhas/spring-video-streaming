@@ -1,5 +1,6 @@
 package com.streaming.app.video_streaming_backend.Services;
 
+import com.streaming.app.video_streaming_backend.DTO.VideoDTO;
 import com.streaming.app.video_streaming_backend.Entities.Video;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -12,7 +13,7 @@ public interface VideoService {
     Video saveVideo(Video video, MultipartFile file);
 
     // video_processing
-    String processVideo(Video video, Path videoPath);
+    // String processVideo(Video video, Path videoPath);
 
-    public Video saveVideoToAws(Video video, MultipartFile file);
+//    public VideoDTO saveVideoToAws(VideoDTO videoDTO);
 }
