@@ -14,6 +14,30 @@ import java.nio.file.Paths;
 @RestController
 @RequestMapping("/api/video")
 public class VideoProcessingControllers {
+    // master .m2u8 file
+    /*
+     * PlayList Loading: When a video player starts playing an HLS stream,
+     * it first requests the master playlist (master.m3u8).
+     * This playlist contains links to the different rendition playlists (e.g., different resolutions).
+     *
+     * Rendition Selection: The player then selects the appropriate rendition playlist
+     * based on network conditions and user preferences
+     *
+     * Segment Downloading: The player downloads the initial segments listed in the chosen rendition
+     * playlist to fill its buffer.
+     * This is why we see multiple segment requests at the beginning.
+     * HLS uses a sliding window approach.
+     * It keeps downloading segments ahead of the current playback position to maintain a buffer
+     * and ensure smooth playback.
+     *
+     * Dynamic Loading: Once the initial buffer is filled,
+     * the player continues to download segments as needed,
+     * based on the #EXT-X-ENDLIST tag (or lack thereof) in the playlist.
+     * If the playlist is a live stream (no #EXT-X-ENDLIST),
+     * the player will periodically refresh the playlist to get new segments.
+     *
+     * */
+
     @CrossOrigin(origins = "http://localhost:63342")
     @GetMapping("/{videoId}/master.m3u8")
     public ResponseEntity<Resource> serveMasterFile(@PathVariable String videoId){

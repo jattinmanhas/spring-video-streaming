@@ -21,7 +21,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
 @Service
 public class VideoProcessingServiceImpl implements VideoProcessingService {
@@ -70,6 +72,8 @@ public class VideoProcessingServiceImpl implements VideoProcessingService {
         Path hlsDirPath = Paths.get(propertiesVariables.getVideoHsl(), video.getVideoId());
         Video videoDb = repository.findById(video.getVideoId()).orElse(null);
 
+        String duration = getVideoDuration(videoPath);
+
         boolean isProcessed =  processVideoAsync(video, videoPath, hlsDirPath);
         if(!isProcessed){
             assert videoDb != null;
@@ -80,6 +84,7 @@ public class VideoProcessingServiceImpl implements VideoProcessingService {
 
         assert videoDb != null;
         videoDb.setStatus("PROCESSED");
+        videoDb.setDuration(duration);
         repository.save(videoDb);
 
         return "VIDEO PROCESSED SUCCESSFULLY";
@@ -216,6 +221,69 @@ public class VideoProcessingServiceImpl implements VideoProcessingService {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static String getVideoDuration(Path videoPath) {
+
+        try {
+            // Construct the ffprobe command
+            List<String> command = new ArrayList<>();
+            command.add("ffprobe");
+            command.add("-v");
+            command.add("error");
+            command.add("-show_entries");
+            command.add("format=duration");
+            command.add("-of");
+            command.add("default=noprint_wrappers=1:nokey=1");
+            command.add(videoPath.toString()); // Convert Path to String
+
+            // Execute the command
+            Process process = new ProcessBuilder(command).start();
+
+            // Read the output
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            StringBuilder output = new StringBuilder();
+            while ((line = reader.readLine()) != null) {
+                output.append(line);
+            }
+
+            // Wait for the process to finish
+            process.waitFor();
+
+            // Parse the duration (can be in seconds.milliseconds or HH:MM:SS.ms format)
+            String durationString = output.toString().trim();
+
+            if (durationString.contains(":")) {  // Handle HH:MM:SS.ms format
+                return durationString; // Return directly if already in desired format
+            } else { // Handle seconds.milliseconds format, convert to HH:MM:SS.ms
+
+                try {
+                    double seconds = Double.parseDouble(durationString);
+                    return formatSeconds(seconds);
+
+                } catch (NumberFormatException e) {
+                    System.err.println("Error parsing duration: " + e.getMessage());
+                    return null;
+                }
+            }
+
+
+
+
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error executing ffprobe: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String formatSeconds(double seconds) {
+        int hours = (int) (seconds / 3600);
+        int minutes = (int) ((seconds % 3600) / 60);
+        int secs = (int) (seconds % 60);
+        double milliseconds = (seconds - (int)seconds) * 1000;  // Get fractional part for milliseconds
+
+        return String.format("%02d:%02d:%02d.%03d", hours, minutes, secs, (int)milliseconds);
     }
 
 }
